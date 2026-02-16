@@ -17,7 +17,7 @@ struct CameraPreviewPlaceholder: View {
                     Image(systemName: "camera.viewfinder")
                         .font(.system(size: 40))
                         .foregroundStyle(NutrisDesign.Color.borderSoft)
-                    
+
                     Text("Camera preview will appear here")
                         .font(.subheadline)
                         .foregroundStyle(NutrisDesign.Color.textPrimary.opacity(0.6))

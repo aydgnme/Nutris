@@ -26,13 +26,14 @@ struct RecognitionResultCard: View {
                         .font(.body)
                         .foregroundStyle(NutrisDesign.Color.primary)
                 }
-                    .padding()
+                .padding()
             )
             .frame(maxWidth: .infinity)
             .frame(height: 120)
             .shadow(color: .black.opacity(0.04), radius: 6)
     }
 }
+
 
 #Preview {
     RecognitionResultCard(title: "Test", resultText: "Test")

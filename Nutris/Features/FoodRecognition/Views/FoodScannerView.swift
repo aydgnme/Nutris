@@ -9,8 +9,7 @@ import SwiftUI
 
 struct FoodScannerView: View {
     
-    @State private var recognizedText: String = "No food detected yet."
-    @State private var isProcessing: Bool = false
+    @State private var viewModel = FoodScannerViewModel()
     
     var body: some View {
         ZStack {
@@ -21,7 +20,7 @@ struct FoodScannerView: View {
                 
                 CameraPreviewPlaceholder()
                 
-                if isProcessing {
+                if viewModel.isProcessing {
                     ProgressView("Analyzing...")
                         .progressViewStyle(.circular)
                         .tint(NutrisDesign.Color.primary)
@@ -29,8 +28,10 @@ struct FoodScannerView: View {
                 
                 RecognitionResultCard(
                     title: "Recognition Result",
-                    resultText: recognizedText
+                    resultText: viewModel.recognizedText
                 )
+                
+                analyzeButton
                 
                 Spacer()
             }
@@ -39,6 +40,26 @@ struct FoodScannerView: View {
         .navigationTitle("Scan Food")
     }
 }
+
+// MARK: - Components
+
+private extension FoodScannerView {
+    
+    var analyzeButton: some View {
+        Button {
+            viewModel.analyzeSample()
+        } label: {
+            Text("Analyze Sample")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(NutrisDesign.Color.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+    }
+}
+
 
 #Preview {
     FoodScannerView()
