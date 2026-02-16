@@ -8,7 +8,7 @@
 import AVFoundation
 import UIKit
 
-protocol CameraPermissionManaging {
+protocol CameraPermissionManaging: Sendable {
     func requestPermission() async -> Bool
     func currentAuthorizationStatus() -> AVAuthorizationStatus
     var appSettingsURL: URL? { get }

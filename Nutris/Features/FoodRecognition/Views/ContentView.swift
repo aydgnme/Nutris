@@ -8,11 +8,17 @@
 import SwiftUI
 
 struct ContentView: View {
+    private let viewModel: FoodScannerViewModel
+
+    init(dependencies: AppDependencies) {
+        self.viewModel = dependencies.makeFoodScannerViewModel()
+    }
+
     var body: some View {
-        FoodScannerView()
+        FoodScannerView(viewModel: self.viewModel)
     }
 }
 
 #Preview {
-    ContentView()
+    ContentView(dependencies: .preview)
 }

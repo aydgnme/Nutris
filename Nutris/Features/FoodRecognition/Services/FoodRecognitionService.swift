@@ -8,6 +8,15 @@
 import Foundation
 import UIKit
 
-protocol FoodRecognitionService {
-    func recognizeFood(from image: UIImage) async throws -> String
+struct RecognitionResult: Equatable, Sendable {
+    let recognizedFoodName: String
+}
+
+protocol FoodRecognitionService: Sendable {
+    /// Performs food recognition for the provided image.
+    ///
+    /// Implementations must respect cooperative cancellation:
+    /// check cancellation before expensive work and throw `CancellationError`
+    /// when cancellation is detected.
+    func recognize(image: UIImage) async throws -> RecognitionResult
 }

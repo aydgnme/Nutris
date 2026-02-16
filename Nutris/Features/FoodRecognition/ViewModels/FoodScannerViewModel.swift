@@ -5,19 +5,50 @@
 //  Created by Mert Aydogan on 16.02.2026.
 //
 
-import AVFoundation
-import CoreImage
+@preconcurrency import AVFoundation
 import Foundation
 import Observation
 import UIKit
+import VideoToolbox
+
+// MARK: - Domain Errors
+
+enum FoodScannerError: Error, Equatable {
+    case permissionDenied
+    case permissionRestricted
+    case cameraConfigurationFailed
+    case noFrameAvailable
+    case recognitionFailed
+    case unknown(Error)
+
+    static func == (lhs: FoodScannerError, rhs: FoodScannerError) -> Bool {
+        switch (lhs, rhs) {
+        case (.permissionDenied, .permissionDenied),
+             (.permissionRestricted, .permissionRestricted),
+             (.cameraConfigurationFailed, .cameraConfigurationFailed),
+             (.noFrameAvailable, .noFrameAvailable),
+             (.recognitionFailed, .recognitionFailed):
+            return true
+
+        case let (.unknown(lhsError), .unknown(rhsError)):
+            let lhsNSError = lhsError as NSError
+            let rhsNSError = rhsError as NSError
+
+            return lhsNSError.domain == rhsNSError.domain && lhsNSError.code == rhsNSError.code
+
+        default:
+            return false
+        }
+    }
+}
 
 // MARK: - State
 
 enum FoodScannerViewState: Equatable {
     case idle
     case processing
-    case success(String)
-    case error(String)
+    case success(RecognitionResult)
+    case error(FoodScannerError)
 }
 
 @MainActor
@@ -27,75 +58,86 @@ final class FoodScannerViewModel {
     private(set) var hasCameraPermission = false
     private(set) var isPermissionDenied = false
     private(set) var isCameraReady = false
-
-    var cameraSession: AVCaptureSession {
-        self.cameraService.session
-    }
+    private(set) var cameraSessionState: CameraSessionState = .stopped
+    private(set) var cameraSession: AVCaptureSession?
 
     var appSettingsURL: URL? {
         self.permissionManager.appSettingsURL
     }
 
-    private let recognitionService: FoodRecognitionService
-    private let cameraService: CameraServicing
-    private let permissionManager: CameraPermissionManaging
-    private let ciContext = CIContext()
+    private let recognitionService: any FoodRecognitionService
+    private let cameraService: any CameraServicing
+    private let permissionManager: any CameraPermissionManaging
 
     private var scanningTask: Task<Void, Never>?
+    private var sessionStateTask: Task<Void, Never>?
     private var activeScanID = UUID()
 
     init(
-        recognitionService: FoodRecognitionService,
-        cameraService: CameraServicing = CameraService(),
-        permissionManager: CameraPermissionManaging = CameraPermissionManager()
+        recognitionService: any FoodRecognitionService,
+        cameraService: any CameraServicing,
+        permissionManager: any CameraPermissionManaging
     ) {
         self.recognitionService = recognitionService
         self.cameraService = cameraService
         self.permissionManager = permissionManager
+
+        self.observeSessionState()
     }
 
     func setupCamera() async {
-        let granted = await permissionManager.requestPermission()
+        if self.cameraSession == nil {
+            self.cameraSession = await self.cameraService.previewSession
+        }
+
+        let granted = await self.permissionManager.requestPermission()
         self.hasCameraPermission = granted
 
         let status = self.permissionManager.currentAuthorizationStatus()
-        self.isPermissionDenied = !granted && status != .notDetermined
+        self.isPermissionDenied = !granted && status == .denied
 
         guard granted else {
             self.isCameraReady = false
+            self.cameraSessionState = await self.cameraService.sessionState
+            self.state = .error(self.permissionError(for: status))
             return
         }
 
         do {
             try await self.cameraService.configure()
             await self.cameraService.start()
-            self.isCameraReady = true
+
+            self.cameraSessionState = await self.cameraService.sessionState
+            self.isCameraReady = self.cameraSessionState == .running
+
+            if case .error = self.state {
+                self.state = .idle
+            }
+        } catch CameraServiceError.configurationFailed {
+            self.isCameraReady = false
+            self.state = .error(.cameraConfigurationFailed)
         } catch {
             self.isCameraReady = false
-            self.state = .error(Self.cameraSetupFailedMessage)
+            self.state = .error(.unknown(error))
         }
     }
 
     func handleDisappear() async {
         self.scanningTask?.cancel()
+        self.scanningTask = nil
+        self.activeScanID = UUID()
+
         await self.cameraService.stop()
     }
 
     func captureAndScan() {
-        guard self.hasCameraPermission else {
-            self.state = .error(Self.permissionRequiredMessage)
-            return
-        }
+        Task { [weak self] in
+            guard let self else {
+                return
+            }
 
-        guard
-            let pixelBuffer = cameraService.latestFramePixelBuffer(),
-            let image = self.makeUIImage(from: pixelBuffer)
-        else {
-            self.state = .error(Self.noFrameMessage)
-            return
+            await self.captureAndScanInternal()
         }
-
-        self.startScanning(with: image)
     }
 
     func startScanning(with image: UIImage) {
@@ -115,16 +157,28 @@ final class FoodScannerViewModel {
             }
 
             do {
-                let result = try await self.recognitionService.recognizeFood(from: image)
+                let result = try await self.recognitionService.recognize(image: image)
                 try Task.checkCancellation()
 
-                guard self.activeScanID == scanID else { return }
+                guard self.activeScanID == scanID else {
+                    return
+                }
+
                 self.state = .success(result)
             } catch is CancellationError {
                 return
+            } catch let scannerError as FoodScannerError {
+                guard self.activeScanID == scanID else {
+                    return
+                }
+
+                self.state = .error(scannerError)
             } catch {
-                guard self.activeScanID == scanID else { return }
-                self.state = .error(Self.recognitionFailedMessage)
+                guard self.activeScanID == scanID else {
+                    return
+                }
+
+                self.state = .error(.recognitionFailed)
             }
         }
     }
@@ -138,16 +192,70 @@ final class FoodScannerViewModel {
 }
 
 private extension FoodScannerViewModel {
-    static let cameraSetupFailedMessage = "Unable to start the camera. Please try again."
-    static let permissionRequiredMessage = "Camera access is required to scan food."
-    static let noFrameMessage = "No frame available yet. Hold steady and try again."
-    static let recognitionFailedMessage = "We couldn't recognize this item. Try again with better lighting."
+    func observeSessionState() {
+        self.sessionStateTask?.cancel()
+
+        self.sessionStateTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+
+            let sessionStateStream = await self.cameraService.makeSessionStateStream()
+
+            for await sessionState in sessionStateStream {
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                self.cameraSessionState = sessionState
+                self.isCameraReady = self.hasCameraPermission && sessionState == .running
+            }
+        }
+    }
+
+    func captureAndScanInternal() async {
+        guard self.hasCameraPermission else {
+            let status = self.permissionManager.currentAuthorizationStatus()
+            self.state = .error(self.permissionError(for: status))
+            return
+        }
+
+        guard let pixelBuffer = await self.cameraService.latestFramePixelBuffer() else {
+            self.state = .error(.noFrameAvailable)
+            return
+        }
+
+        guard let image = self.makeUIImage(from: pixelBuffer) else {
+            self.state = .error(.recognitionFailed)
+            return
+        }
+
+        self.startScanning(with: image)
+    }
+
+    func permissionError(for status: AVAuthorizationStatus) -> FoodScannerError {
+        switch status {
+        case .restricted:
+            .permissionRestricted
+
+        default:
+            .permissionDenied
+        }
+    }
 
     func makeUIImage(from pixelBuffer: CVPixelBuffer) -> UIImage? {
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        guard let cgImage = self.ciContext.createCGImage(ciImage, from: ciImage.extent) else {
+        var cgImage: CGImage?
+
+        let status = VTCreateCGImageFromCVPixelBuffer(
+            pixelBuffer,
+            options: nil,
+            imageOut: &cgImage
+        )
+
+        guard status == noErr, let cgImage else {
             return nil
         }
+
         return UIImage(cgImage: cgImage)
     }
 }

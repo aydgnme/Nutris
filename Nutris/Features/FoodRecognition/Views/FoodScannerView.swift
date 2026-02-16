@@ -9,9 +9,11 @@ import SwiftUI
 
 struct FoodScannerView: View {
     @State private var cameraLifecycle = CameraLifecycle.setup
-    @State private var viewModel = FoodScannerViewModel(
-        recognitionService: MockFoodRecognitionService()
-    )
+    @State private var viewModel: FoodScannerViewModel
+
+    init(viewModel: FoodScannerViewModel) {
+        self._viewModel = State(initialValue: viewModel)
+    }
 
     var body: some View {
         ZStack {
@@ -19,9 +21,9 @@ struct FoodScannerView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: Layout.contentSpacing) {
-                cameraSection
+                self.cameraSection
 
-                content
+                self.content
 
                 Spacer()
             }
@@ -32,6 +34,7 @@ struct FoodScannerView: View {
             switch self.cameraLifecycle {
             case .setup:
                 await self.viewModel.setupCamera()
+
             case .teardown:
                 await self.viewModel.handleDisappear()
             }
@@ -63,9 +66,13 @@ private extension FoodScannerView {
     @ViewBuilder
     var cameraSection: some View {
         if self.viewModel.hasCameraPermission {
-            CameraPreviewView(session: self.viewModel.cameraSession)
-                .frame(height: Layout.previewHeight)
-                .clipShape(RoundedRectangle(cornerRadius: Layout.cameraCornerRadius))
+            if let session = self.viewModel.cameraSession {
+                CameraPreviewView(session: session)
+                    .frame(height: Layout.previewHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: Layout.cameraCornerRadius))
+            } else {
+                CameraPreviewPlaceholder()
+            }
         } else {
             self.permissionView
         }
@@ -90,7 +97,7 @@ private extension FoodScannerView {
             VStack(spacing: Layout.permissionSpacing) {
                 RecognitionResultCard(
                     title: "Recognition Result",
-                    resultText: result
+                    resultText: result.recognizedFoodName
                 )
 
                 Button("Scan Again") {
@@ -99,9 +106,9 @@ private extension FoodScannerView {
                 .buttonStyle(.bordered)
             }
 
-        case let .error(message):
+        case let .error(error):
             VStack(spacing: Layout.permissionSpacing) {
-                Text(message)
+                Text(self.message(for: error))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.red)
 
@@ -130,7 +137,7 @@ private extension FoodScannerView {
             Text("Camera access is required to scan food.")
                 .multilineTextAlignment(.center)
 
-            if self.viewModel.isPermissionDenied, let settingsURL = viewModel.appSettingsURL {
+            if self.viewModel.isPermissionDenied, let settingsURL = self.viewModel.appSettingsURL {
                 Link("Open Settings", destination: settingsURL)
                     .buttonStyle(.borderedProminent)
                     .tint(NutrisDesign.Color.primary)
@@ -145,8 +152,30 @@ private extension FoodScannerView {
         }
         .frame(height: Layout.previewHeight)
     }
+
+    func message(for error: FoodScannerError) -> String {
+        switch error {
+        case .permissionDenied:
+            "Camera access was denied. Allow access in Settings to continue."
+
+        case .permissionRestricted:
+            "Camera access is restricted on this device."
+
+        case .cameraConfigurationFailed:
+            "Unable to start the camera. Please try again."
+
+        case .noFrameAvailable:
+            "No frame available yet. Hold steady and try again."
+
+        case .recognitionFailed:
+            "We couldn't recognize this item. Try again with better lighting."
+
+        case .unknown:
+            "An unexpected error occurred. Please try again."
+        }
+    }
 }
 
 #Preview {
-    FoodScannerView()
+    FoodScannerView(viewModel: AppDependencies.preview.makeFoodScannerViewModel())
 }

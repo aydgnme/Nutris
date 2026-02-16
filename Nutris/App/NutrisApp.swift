@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct NutrisApp: App {
+    private let dependencies = AppDependencies()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(dependencies: self.dependencies)
         }
     }
 }
