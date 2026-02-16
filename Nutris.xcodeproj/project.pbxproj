@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		DC8136002F435677005CBBCD /* .swiftlint.yml in Resources */ = {isa = PBXBuildFile; fileRef = DC8135FF2F435677005CBBCD /* .swiftlint.yml */; };
-		DC8136052F4356D2005CBBCD /* .swiftformat.md in Resources */ = {isa = PBXBuildFile; fileRef = DC8136042F4356D2005CBBCD /* .swiftformat.md */; };
+		DC8136052F4356D2005CBBCD /* .swiftformat in Resources */ = {isa = PBXBuildFile; fileRef = DC8136042F4356D2005CBBCD /* .swiftformat */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,7 +33,7 @@
 		DC8135E12F4354A3005CBBCD /* NutrisTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NutrisTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DC8135EB2F4354A3005CBBCD /* NutrisUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NutrisUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DC8135FF2F435677005CBBCD /* .swiftlint.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = .swiftlint.yml; sourceTree = "<group>"; };
-		DC8136042F4356D2005CBBCD /* .swiftformat.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = .swiftformat.md; sourceTree = "<group>"; };
+		DC8136042F4356D2005CBBCD /* .swiftformat */ = {isa = PBXFileReference; lastKnownFileType = text; path = .swiftformat; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -82,7 +82,7 @@
 		DC8135CB2F4354A2005CBBCD = {
 			isa = PBXGroup;
 			children = (
-				DC8136042F4356D2005CBBCD /* .swiftformat.md */,
+				DC8136042F4356D2005CBBCD /* .swiftformat */,
 				DC8135FF2F435677005CBBCD /* .swiftlint.yml */,
 				DC8135D62F4354A2005CBBCD /* Nutris */,
 				DC8135E42F4354A3005CBBCD /* NutrisTests */,
@@ -224,7 +224,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DC8136002F435677005CBBCD /* .swiftlint.yml in Resources */,
-				DC8136052F4356D2005CBBCD /* .swiftformat.md in Resources */,
+				DC8136052F4356D2005CBBCD /* .swiftformat in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -247,7 +247,8 @@
 /* Begin PBXShellScriptBuildPhase section */
 		DC8135FE2F43562E005CBBCD /* SwiftLint */ = {
 			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
+			alwaysOutOfDate = 1;
+			buildActionMask = 8;
 			files = (
 			);
 			inputFileListPaths = (
@@ -259,13 +260,14 @@
 			);
 			outputPaths = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
+			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/sh;
-			shellScript = "if which swiftlint >/dev/null; then\n  swiftlint\nelse\n  echo \"warning: SwiftLint not installed\"\nfi\n";
+			shellScript = "export PATH=\"/opt/homebrew/bin:$PATH\"\n\nif which swiftlint >/dev/null; then\n  swiftlint \"${SRCROOT}/Nutris\"\nelse\n  echo \"SwiftLint not installed\"\nfi\n";
 		};
 		DC8136012F43569A005CBBCD /* SwiftFormat */ = {
 			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
+			alwaysOutOfDate = 1;
+			buildActionMask = 8;
 			files = (
 			);
 			inputFileListPaths = (
@@ -277,9 +279,9 @@
 			);
 			outputPaths = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
+			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/sh;
-			shellScript = "if which swiftformat >/dev/null; then\n  swiftformat .\nelse\n  echo \"warning: SwiftFormat not installed\"\nfi\n";
+			shellScript = "export PATH=\"/opt/homebrew/bin:$PATH\"\n\nif which swiftformat >/dev/null; then\n  swiftformat \"${SRCROOT}/Nutris\"\nelse\n  echo \"SwiftFormat not installed\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -359,7 +361,7 @@
 				DEVELOPMENT_TEAM = 8YP6GH5LF7;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -425,7 +427,7 @@
 				DEVELOPMENT_TEAM = 8YP6GH5LF7;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
