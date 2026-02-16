@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct FoodScannerView: View {
+    @State private var cameraLifecycle = CameraLifecycle.setup
     @State private var viewModel = FoodScannerViewModel(
         recognitionService: MockFoodRecognitionService()
     )
@@ -27,11 +28,19 @@ struct FoodScannerView: View {
             .padding()
         }
         .navigationTitle("Scan Food")
-        .task {
-            await self.viewModel.setupCamera()
+        .task(id: self.cameraLifecycle) {
+            switch self.cameraLifecycle {
+            case .setup:
+                await self.viewModel.setupCamera()
+            case .teardown:
+                await self.viewModel.handleDisappear()
+            }
+        }
+        .onAppear {
+            self.cameraLifecycle = .setup
         }
         .onDisappear {
-            self.viewModel.handleDisappear()
+            self.cameraLifecycle = .teardown
         }
     }
 }
@@ -39,6 +48,11 @@ struct FoodScannerView: View {
 // MARK: - State Rendering
 
 private extension FoodScannerView {
+    enum CameraLifecycle: Hashable {
+        case setup
+        case teardown
+    }
+
     enum Layout {
         static let contentSpacing: CGFloat = 20
         static let permissionSpacing: CGFloat = 12

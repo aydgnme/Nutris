@@ -6,6 +6,7 @@
 //
 
 import AVFoundation
+import CoreImage
 import Foundation
 import Observation
 import UIKit
@@ -38,6 +39,7 @@ final class FoodScannerViewModel {
     private let recognitionService: FoodRecognitionService
     private let cameraService: CameraServicing
     private let permissionManager: CameraPermissionManaging
+    private let ciContext = CIContext()
 
     private var scanningTask: Task<Void, Never>?
     private var activeScanID = UUID()
@@ -65,8 +67,8 @@ final class FoodScannerViewModel {
         }
 
         do {
-            try await self.cameraService.configureIfNeeded()
-            self.cameraService.start()
+            try await self.cameraService.configure()
+            await self.cameraService.start()
             self.isCameraReady = true
         } catch {
             self.isCameraReady = false
@@ -74,9 +76,9 @@ final class FoodScannerViewModel {
         }
     }
 
-    func handleDisappear() {
+    func handleDisappear() async {
         self.scanningTask?.cancel()
-        self.cameraService.stop()
+        await self.cameraService.stop()
     }
 
     func captureAndScan() {
@@ -85,7 +87,10 @@ final class FoodScannerViewModel {
             return
         }
 
-        guard let image = cameraService.captureCurrentFrame() else {
+        guard
+            let pixelBuffer = cameraService.latestFramePixelBuffer(),
+            let image = self.makeUIImage(from: pixelBuffer)
+        else {
             self.state = .error(Self.noFrameMessage)
             return
         }
@@ -137,4 +142,12 @@ private extension FoodScannerViewModel {
     static let permissionRequiredMessage = "Camera access is required to scan food."
     static let noFrameMessage = "No frame available yet. Hold steady and try again."
     static let recognitionFailedMessage = "We couldn't recognize this item. Try again with better lighting."
+
+    func makeUIImage(from pixelBuffer: CVPixelBuffer) -> UIImage? {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        guard let cgImage = self.ciContext.createCGImage(ciImage, from: ciImage.extent) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
+    }
 }

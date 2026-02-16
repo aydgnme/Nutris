@@ -5,9 +5,9 @@
 //  Created by Mert Aydogan on 16.02.2026.
 //
 
-@preconcurrency import AVFoundation
+import AVFoundation
+import CoreVideo
 import Foundation
-import UIKit
 
 enum CameraServiceError: Error {
     case configurationFailed
@@ -15,183 +15,196 @@ enum CameraServiceError: Error {
 
 protocol CameraServicing: AnyObject {
     var session: AVCaptureSession { get }
-    func configureIfNeeded() async throws
-    func start()
-    func stop()
-    func captureCurrentFrame() -> UIImage?
+    func configure() async throws
+    func start() async
+    func stop() async
+    func latestFramePixelBuffer() -> CVPixelBuffer?
 }
 
-actor CameraService: CameraServicing {
-    nonisolated(unsafe) let session = AVCaptureSession()
+final class CameraService: NSObject, CameraServicing {
+    let session = AVCaptureSession()
 
-    private let photoOutput = AVCapturePhotoOutput()
-    private nonisolated let latestFrameLock = NSLock()
-    private nonisolated(unsafe) var latestFrame: UIImage?
+    private let sessionQueue = DispatchQueue(label: "com.nutris.camera.session")
+    private let queueKey = DispatchSpecificKey<UInt8>()
+    private let videoOutput = AVCaptureVideoDataOutput()
 
     private var isConfigured = false
+    private var shouldRun = false
     private var isRunning = false
-    private var framePumpTask: Task<Void, Never>?
+    private var isInBackground = false
+    private var isSessionInterrupted = false
+    private var latestPixelBuffer: CVPixelBuffer?
 
-    private var nextCaptureID = 0
-    private var captureDelegates: [Int: PhotoCaptureDelegateBridge] = [:]
-
-    func configureIfNeeded() async throws {
-        guard !self.isConfigured else { return }
-
-        self.session.beginConfiguration()
-        self.session.sessionPreset = .photo
-        defer { session.commitConfiguration() }
-
-        guard
-            let device = AVCaptureDevice.default(
-                .builtInWideAngleCamera,
-                for: .video,
-                position: .back
-            ),
-            let input = try? AVCaptureDeviceInput(device: device),
-            session.canAddInput(input),
-            session.canAddOutput(photoOutput)
-        else {
-            throw CameraServiceError.configurationFailed
-        }
-
-        self.session.addInput(input)
-        self.session.addOutput(self.photoOutput)
-        self.isConfigured = true
+    override init() {
+        super.init()
+        self.sessionQueue.setSpecific(key: self.queueKey, value: 1)
+        self.registerObservers()
     }
 
-    nonisolated func start() {
-        Task {
-            await self.startIfNeeded()
-        }
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
-    nonisolated func stop() {
-        Task {
-            await self.stopIfNeeded()
-        }
-    }
+    func configure() async throws {
+        try self.performOnSessionQueue {
+            guard !self.isConfigured else { return }
 
-    nonisolated func captureCurrentFrame() -> UIImage? {
-        self.latestFrameLock.lock()
-        let frame = self.latestFrame
-        self.latestFrameLock.unlock()
-        return frame
-    }
+            self.session.beginConfiguration()
+            self.session.sessionPreset = .high
+            defer { self.session.commitConfiguration() }
 
-    private func startIfNeeded() {
-        guard self.isConfigured, !self.isRunning else { return }
-
-        self.session.startRunning()
-        self.isRunning = true
-        self.startFramePumpIfNeeded()
-    }
-
-    private func stopIfNeeded() {
-        guard self.isRunning else { return }
-
-        self.isRunning = false
-        self.framePumpTask?.cancel()
-        self.framePumpTask = nil
-
-        for delegate in self.captureDelegates.values {
-            delegate.cancel()
-        }
-        self.captureDelegates.removeAll()
-
-        if self.session.isRunning {
-            self.session.stopRunning()
-        }
-    }
-
-    private func startFramePumpIfNeeded() {
-        guard self.framePumpTask == nil else { return }
-
-        self.framePumpTask = Task { [weak self] in
-            guard let self else { return }
-
-            while !Task.isCancelled {
-                guard await self.isRunning else { return }
-
-                await self.capturePhotoFrame()
-
-                try? await Task.sleep(for: .milliseconds(200))
+            guard
+                let device = AVCaptureDevice.default(
+                    .builtInWideAngleCamera,
+                    for: .video,
+                    position: .back
+                ),
+                let input = try? AVCaptureDeviceInput(device: device),
+                self.session.canAddInput(input),
+                self.session.canAddOutput(self.videoOutput)
+            else {
+                throw CameraServiceError.configurationFailed
             }
+
+            self.videoOutput.alwaysDiscardsLateVideoFrames = true
+            self.videoOutput.videoSettings = [
+                kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
+            ]
+            self.videoOutput.setSampleBufferDelegate(self, queue: self.sessionQueue)
+
+            self.session.addInput(input)
+            self.session.addOutput(self.videoOutput)
+            self.isConfigured = true
         }
     }
 
-    private func capturePhotoFrame() async {
-        guard self.isRunning else { return }
-
-        let captureID = self.nextCaptureID
-        self.nextCaptureID += 1
-
-        let settings = AVCapturePhotoSettings()
-        let image: UIImage? = await withCheckedContinuation { continuation in
-            let delegate = PhotoCaptureDelegateBridge(continuation: continuation)
-            self.captureDelegates[captureID] = delegate
-            self.photoOutput.capturePhoto(with: settings, delegate: delegate)
+    func start() async {
+        self.performOnSessionQueue {
+            self.shouldRun = true
+            self.startSessionIfPossible()
         }
-
-        self.captureDelegates[captureID] = nil
-        self.setLatestFrame(image)
     }
 
-    private func setLatestFrame(_ image: UIImage?) {
-        self.latestFrameLock.lock()
-        self.latestFrame = image
-        self.latestFrameLock.unlock()
+    func stop() async {
+        self.performOnSessionQueue {
+            self.shouldRun = false
+            self.stopSessionIfNeeded()
+        }
+    }
+
+    func latestFramePixelBuffer() -> CVPixelBuffer? {
+        self.performOnSessionQueue {
+            self.latestPixelBuffer
+        }
     }
 }
 
-final nonisolated class PhotoCaptureDelegateBridge: NSObject, AVCapturePhotoCaptureDelegate {
-    private let stateLock = NSLock()
-    private var continuation: CheckedContinuation<UIImage?, Never>?
-    private var hasCompleted = false
-
-    init(continuation: CheckedContinuation<UIImage?, Never>) {
-        self.continuation = continuation
-        super.init()
+private extension CameraService {
+    enum AppNotifications {
+        static let didEnterBackground = Notification.Name("UIApplicationDidEnterBackgroundNotification")
+        static let willEnterForeground = Notification.Name("UIApplicationWillEnterForegroundNotification")
     }
 
-    func photoOutput(
-        _ output: AVCapturePhotoOutput,
-        didFinishProcessingPhoto photo: AVCapturePhoto,
-        error: Error?
-    ) {
-        guard error == nil else {
-            self.complete(with: nil)
+    func registerObservers() {
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(handleDidEnterBackground),
+            name: AppNotifications.didEnterBackground,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleWillEnterForeground),
+            name: AppNotifications.willEnterForeground,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleSessionWasInterrupted),
+            name: AVCaptureSession.wasInterruptedNotification,
+            object: self.session
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleSessionInterruptionEnded),
+            name: AVCaptureSession.interruptionEndedNotification,
+            object: self.session
+        )
+    }
+
+    @objc func handleDidEnterBackground(_ notification: Notification) {
+        self.performOnSessionQueue {
+            self.isInBackground = true
+            self.stopSessionIfNeeded()
+        }
+    }
+
+    @objc func handleWillEnterForeground(_ notification: Notification) {
+        self.performOnSessionQueue {
+            self.isInBackground = false
+            self.startSessionIfPossible()
+        }
+    }
+
+    @objc func handleSessionWasInterrupted(_ notification: Notification) {
+        self.performOnSessionQueue {
+            self.isSessionInterrupted = true
+            self.isRunning = false
+        }
+    }
+
+    @objc func handleSessionInterruptionEnded(_ notification: Notification) {
+        self.performOnSessionQueue {
+            self.isSessionInterrupted = false
+            self.startSessionIfPossible()
+        }
+    }
+
+    func startSessionIfPossible() {
+        guard
+            self.shouldRun,
+            self.isConfigured,
+            !self.isInBackground,
+            !self.isSessionInterrupted
+        else {
             return
         }
 
-        self.complete(with: photo.fileDataRepresentation())
-    }
-
-    func photoOutput(
-        _ output: AVCapturePhotoOutput,
-        didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
-        error: Error?
-    ) {
-        if error != nil {
-            self.complete(with: nil)
+        guard !self.session.isRunning else {
+            self.isRunning = true
+            return
         }
+
+        self.session.startRunning()
+        self.isRunning = self.session.isRunning
     }
 
-    func cancel() {
-        self.complete(with: nil)
+    func stopSessionIfNeeded() {
+        guard self.session.isRunning else {
+            self.isRunning = false
+            return
+        }
+
+        self.session.stopRunning()
+        self.isRunning = false
     }
 
-    private func complete(with photoData: Data?) {
-        self.stateLock.lock()
-        let shouldComplete = !self.hasCompleted
-        self.hasCompleted = true
-        let continuation = self.continuation
-        self.continuation = nil
-        self.stateLock.unlock()
+    func performOnSessionQueue<T>(_ work: () throws -> T) rethrows -> T {
+        if DispatchQueue.getSpecific(key: self.queueKey) != nil {
+            return try work()
+        }
+        return try self.sessionQueue.sync(execute: work)
+    }
+}
 
-        guard shouldComplete else { return }
-
-        let image = photoData.flatMap { UIImage(data: $0) }
-        continuation?.resume(returning: image)
+extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        self.latestPixelBuffer = pixelBuffer
     }
 }

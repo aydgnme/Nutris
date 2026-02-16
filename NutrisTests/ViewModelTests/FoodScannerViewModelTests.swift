@@ -6,6 +6,7 @@
 //
 
 import AVFoundation
+import CoreVideo
 import Foundation
 @testable import Nutris
 import UIKit
@@ -47,24 +48,24 @@ private final class TestCameraService: CameraServicing {
     var configureCallCount = 0
     var startCallCount = 0
     var stopCallCount = 0
-    var frameToCapture: UIImage?
+    var frameToCapture: CVPixelBuffer?
 
-    func configureIfNeeded() async throws {
+    func configure() async throws {
         self.configureCallCount += 1
         if self.shouldThrowOnConfigure {
             throw CameraServiceError.configurationFailed
         }
     }
 
-    func start() {
+    func start() async {
         self.startCallCount += 1
     }
 
-    func stop() {
+    func stop() async {
         self.stopCallCount += 1
     }
 
-    func captureCurrentFrame() -> UIImage? {
+    func latestFramePixelBuffer() -> CVPixelBuffer? {
         self.frameToCapture
     }
 }
