@@ -10,36 +10,35 @@ import Observation
 
 @Observable
 final class FoodScannerViewModel {
-    
     // MARK: - State
-    
+
     enum ViewState: Equatable {
         case idle
         case processing
         case success(String)
         case error(String)
     }
-    
+
     // MARK: - Properties
-    
+
     var state: ViewState = .idle
-    
+
     // MARK: - Actions
-    
+
     func startScanning() {
-        state = .processing
-        
+        self.state = .processing
+
         Task {
             try? await Task.sleep(for: .seconds(2))
-            
+
             // Temporary mock result
             let mockResult = "Grilled Chicken Salad"
-            
-            state = .success(mockResult)
+
+            self.state = .success(mockResult)
         }
     }
-    
+
     func reset() {
-        state = .idle
+        self.state = .idle
     }
 }
