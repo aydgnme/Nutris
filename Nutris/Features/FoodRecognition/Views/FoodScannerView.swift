@@ -17,8 +17,8 @@ struct FoodScannerView: View {
             NutrisDesign.Color.backgroundPrimary
                 .ignoresSafeArea()
 
-            VStack(spacing: 24) {
-                CameraPreviewPlaceholder()
+            VStack(spacing: Layout.contentSpacing) {
+                cameraSection
 
                 content
 
@@ -27,37 +27,109 @@ struct FoodScannerView: View {
             .padding()
         }
         .navigationTitle("Scan Food")
+        .task {
+            await self.viewModel.setupCamera()
+        }
+        .onDisappear {
+            self.viewModel.handleDisappear()
+        }
     }
 }
 
 // MARK: - State Rendering
 
 private extension FoodScannerView {
+    enum Layout {
+        static let contentSpacing: CGFloat = 20
+        static let permissionSpacing: CGFloat = 12
+        static let cameraCornerRadius: CGFloat = 20
+        static let previewHeight: CGFloat = 320
+    }
+
+    @ViewBuilder
+    var cameraSection: some View {
+        if self.viewModel.hasCameraPermission {
+            CameraPreviewView(session: self.viewModel.cameraSession)
+                .frame(height: Layout.previewHeight)
+                .clipShape(RoundedRectangle(cornerRadius: Layout.cameraCornerRadius))
+        } else {
+            self.permissionView
+        }
+    }
+
     @ViewBuilder
     var content: some View {
         switch self.viewModel.state {
         case .idle:
-            Button("Start Scan") {
-                self.viewModel.startScanning(with: UIImage())
+            Button("Capture") {
+                self.viewModel.captureAndScan()
             }
             .buttonStyle(.borderedProminent)
             .tint(NutrisDesign.Color.primary)
+            .disabled(!self.viewModel.isCameraReady)
 
         case .processing:
             ProgressView("Analyzing...")
-                .progressViewStyle(.circular)
                 .tint(NutrisDesign.Color.primary)
 
         case let .success(result):
-            RecognitionResultCard(
-                title: "Recognition Result",
-                resultText: result
-            )
+            VStack(spacing: Layout.permissionSpacing) {
+                RecognitionResultCard(
+                    title: "Recognition Result",
+                    resultText: result
+                )
+
+                Button("Scan Again") {
+                    self.viewModel.reset()
+                }
+                .buttonStyle(.bordered)
+            }
 
         case let .error(message):
-            Text(message)
-                .foregroundStyle(.red)
+            VStack(spacing: Layout.permissionSpacing) {
+                Text(message)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.red)
+
+                if self.viewModel.hasCameraPermission {
+                    Button("Try Again") {
+                        self.viewModel.reset()
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button("Retry Camera Access") {
+                        Task {
+                            await self.viewModel.setupCamera()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
         }
+    }
+
+    var permissionView: some View {
+        VStack(spacing: Layout.permissionSpacing) {
+            Image(systemName: "camera.fill")
+                .font(.largeTitle)
+
+            Text("Camera access is required to scan food.")
+                .multilineTextAlignment(.center)
+
+            if self.viewModel.isPermissionDenied, let settingsURL = viewModel.appSettingsURL {
+                Link("Open Settings", destination: settingsURL)
+                    .buttonStyle(.borderedProminent)
+                    .tint(NutrisDesign.Color.primary)
+            }
+
+            Button("Retry Permission") {
+                Task {
+                    await self.viewModel.setupCamera()
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(height: Layout.previewHeight)
     }
 }
 
