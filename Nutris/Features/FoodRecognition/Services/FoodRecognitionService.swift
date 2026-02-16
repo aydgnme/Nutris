@@ -6,3 +6,8 @@
 //
 
 import Foundation
+import UIKit
+
+protocol FoodRecognitionService {
+    func recognizeFood(from image: UIImage) async throws -> String
+}

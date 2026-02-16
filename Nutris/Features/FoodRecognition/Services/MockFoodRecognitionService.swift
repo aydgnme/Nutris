@@ -6,3 +6,19 @@
 //
 
 import Foundation
+import UIKit
+
+final class MockFoodRecognitionService: FoodRecognitionService {
+    func recognizeFood(from image: UIImage) async throws -> String {
+        try await Task.sleep(for: .seconds(2))
+
+        let mockResult = [
+            "Grilled Chicken Salad",
+            "Avocado Toast",
+            "Spaghetti Bolognese",
+            "Chocolate Cake"
+        ]
+
+        return mockResult.randomElement() ?? "Unknown Food"
+    }
+}

@@ -8,7 +8,9 @@
 import SwiftUI
 
 struct FoodScannerView: View {
-    @State private var viewModel = FoodScannerViewModel()
+    @State private var viewModel = FoodScannerViewModel(
+        recognitionService: MockFoodRecognitionService()
+    )
 
     var body: some View {
         ZStack {
@@ -36,7 +38,7 @@ private extension FoodScannerView {
         switch self.viewModel.state {
         case .idle:
             Button("Start Scan") {
-                self.viewModel.startScanning()
+                self.viewModel.startScanning(with: UIImage())
             }
             .buttonStyle(.borderedProminent)
             .tint(NutrisDesign.Color.primary)

@@ -7,6 +7,7 @@
 
 import Foundation
 import Observation
+import UIKit
 
 @Observable
 final class FoodScannerViewModel {
@@ -23,18 +24,24 @@ final class FoodScannerViewModel {
 
     var state: ViewState = .idle
 
+    private let recognitionService: FoodRecognitionService
+
+    init(recognitionService: FoodRecognitionService) {
+        self.recognitionService = recognitionService
+    }
+
     // MARK: - Actions
 
-    func startScanning() {
+    func startScanning(with image: UIImage) {
         self.state = .processing
 
         Task {
-            try? await Task.sleep(for: .seconds(2))
-
-            // Temporary mock result
-            let mockResult = "Grilled Chicken Salad"
-
-            self.state = .success(mockResult)
+            do {
+                let result = try await recognitionService.recognizeFood(from: image)
+                self.state = .success(result)
+            } catch {
+                self.state = .error("Recognition failed.")
+            }
         }
     }
 
