@@ -109,25 +109,25 @@ private extension CameraService {
         let center = NotificationCenter.default
         center.addObserver(
             self,
-            selector: #selector(handleDidEnterBackground),
+            selector: #selector(self.handleDidEnterBackground),
             name: AppNotifications.didEnterBackground,
             object: nil
         )
         center.addObserver(
             self,
-            selector: #selector(handleWillEnterForeground),
+            selector: #selector(self.handleWillEnterForeground),
             name: AppNotifications.willEnterForeground,
             object: nil
         )
         center.addObserver(
             self,
-            selector: #selector(handleSessionWasInterrupted),
+            selector: #selector(self.handleSessionWasInterrupted),
             name: AVCaptureSession.wasInterruptedNotification,
             object: self.session
         )
         center.addObserver(
             self,
-            selector: #selector(handleSessionInterruptionEnded),
+            selector: #selector(self.handleSessionInterruptionEnded),
             name: AVCaptureSession.interruptionEndedNotification,
             object: self.session
         )
