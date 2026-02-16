@@ -7,22 +7,23 @@
 
 import Foundation
 import Observation
+import SwiftUI
 import UIKit
 
-@Observable
+// MARK: - State
+
+enum FoodScannerViewState: Equatable {
+    case idle
+    case processing
+    case success(String)
+    case error(String)
+}
+
+@MainActor @Observable
 final class FoodScannerViewModel {
-    // MARK: - State
-
-    enum ViewState: Equatable {
-        case idle
-        case processing
-        case success(String)
-        case error(String)
-    }
-
     // MARK: - Properties
 
-    var state: ViewState = .idle
+    var state: FoodScannerViewState = .idle
 
     private let recognitionService: FoodRecognitionService
 
@@ -37,10 +38,16 @@ final class FoodScannerViewModel {
 
         Task {
             do {
+                // Perform recognition off the main actor
                 let result = try await recognitionService.recognizeFood(from: image)
-                self.state = .success(result)
+                // Hop back to main actor to update state explicitly
+                await MainActor.run { [weak self] in
+                    self?.state = .success(result)
+                }
             } catch {
-                self.state = .error("Recognition failed.")
+                await MainActor.run { [weak self] in
+                    self?.state = .error("Recognition failed.")
+                }
             }
         }
     }
