@@ -13,17 +13,33 @@ final class FoodScannerViewModel {
     
     // MARK: - State
     
-    var recognizedText: String = "No food detected yet"
-    var isProcessing: Bool = false
+    enum ViewState: Equatable {
+        case idle
+        case processing
+        case success(String)
+        case error(String)
+    }
     
-    // MARK: - Intent
+    // MARK: - Properties
     
-    func analyzeSample() {
-        isProcessing = true
+    var state: ViewState = .idle
+    
+    // MARK: - Actions
+    
+    func startScanning() {
+        state = .processing
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            self.recognizedText = "Grilled Chicken Salad"
-            self.isProcessing = false
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            
+            // Temporary mock result
+            let mockResult = "Grilled Chicken Salad"
+            
+            state = .success(mockResult)
         }
+    }
+    
+    func reset() {
+        state = .idle
     }
 }

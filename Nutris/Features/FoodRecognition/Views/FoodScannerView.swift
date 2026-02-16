@@ -20,18 +20,7 @@ struct FoodScannerView: View {
                 
                 CameraPreviewPlaceholder()
                 
-                if viewModel.isProcessing {
-                    ProgressView("Analyzing...")
-                        .progressViewStyle(.circular)
-                        .tint(NutrisDesign.Color.primary)
-                }
-                
-                RecognitionResultCard(
-                    title: "Recognition Result",
-                    resultText: viewModel.recognizedText
-                )
-                
-                analyzeButton
+                content
                 
                 Spacer()
             }
@@ -41,25 +30,37 @@ struct FoodScannerView: View {
     }
 }
 
-// MARK: - Components
+// MARK: - State Rendering
 
 private extension FoodScannerView {
     
-    var analyzeButton: some View {
-        Button {
-            viewModel.analyzeSample()
-        } label: {
-            Text("Analyze Sample")
-                .font(.headline)
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(NutrisDesign.Color.primary)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+    @ViewBuilder
+    var content: some View {
+        switch viewModel.state {
+        case .idle:
+            Button("Start Scan") {
+                viewModel.startScanning()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(NutrisDesign.Color.primary)
+            
+        case .processing:
+            ProgressView("Analyzing...")
+                .progressViewStyle(.circular)
+                .tint(NutrisDesign.Color.primary)
+            
+        case .success(let result):
+            RecognitionResultCard(
+                title: "Recognition Result",
+                resultText: result
+            )
+            
+        case .error(let message):
+            Text(message)
+                .foregroundStyle(.red)
         }
     }
 }
-
 
 #Preview {
     FoodScannerView()
